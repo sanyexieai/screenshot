@@ -1,0 +1,85 @@
+export struct ImageData  {
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    image: image
+}
+export component Main inherits Window {
+    no-frame: true;
+    background: transparent;
+
+    callback drawing();
+    callback save();
+
+    // 定义方框的坐标和尺寸
+    in-out property <length> start_x: 0;
+    in-out property <length> start_y: 0;
+    in-out property <length> end_x: 0;
+    in-out property <length> end_y: 0;
+    in-out property <bool> is_drawing: false;
+
+    // 定义一个结构体数组，包含x, y, width, height和imagePath
+    in-out property<[ImageData]> images: [];
+
+
+
+    // 包含所有图像的Rectangle
+    Rectangle {
+        width: parent.width ; // 根据需要调整
+        height: parent.height; // 根据需要调整
+        for image_data in images : Rectangle {
+            x: image_data.x * 1px;
+            y: image_data.y * 1px;
+            width: image_data.width * 1px;
+            height: image-data.height * 1px;
+            background: green;
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: image_data.image; 
+            }
+        }
+                // 方框，根据鼠标的起点和终点计算位置和尺寸
+                Rectangle {
+                    background: transparent;
+                    border-width: 2px;
+                    border-color: red;
+                    x: start_x < end_x? start_x : end_x;
+                    y: start_y < end_y ? start_y : end_y ;
+                    width: Math.abs(end_x - start_x);
+                    height: Math.abs(end_y - start_y);
+                    visible: is_drawing;
+                }
+
+    }
+    TouchArea{
+        mouse-cursor: none;
+        width: 100%;
+        height: 100%;
+        x: 0;
+        y: 0;
+        pointer-event(ev) => {
+            //鼠标按下
+            if(ev.kind == PointerEventKind.down){
+                start_x = self.mouse-x;
+                start_y = self.mouse-y;
+                end_x = self.mouse-x;
+                end_y = self.mouse-y;
+                is_drawing = true;
+            }
+            //鼠标移动
+            if(ev.kind == PointerEventKind.move){
+                if(is_drawing){
+                    end_x = self.mouse-x;
+                    end_y = self.mouse-y;
+                }
+            }
+            //鼠标按下
+            if(ev.kind == PointerEventKind.up){
+                is_drawing = false;
+                save();
+            }
+        }
+    }
+}
