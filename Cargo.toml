@@ -5,10 +5,11 @@ edition = "2021"
 
 [dependencies]
 slint ="1.8"
-anyhow = "1"
+anyhow = "1.0.91"
 xcap ="0.0.14"
 chrono = "0.4"
 winapi = { version = "0.3", features = ["winuser"] }
+crossbeam = "0.8"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 clipboard ="0.5"
