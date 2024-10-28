@@ -8,7 +8,7 @@ export struct ImageData  {
 export component Main inherits Window {
     no-frame: true;
     background: transparent;
-    visible: false;
+    // visible: false;
 
     callback drawing();
     callback save();
@@ -29,6 +29,8 @@ export component Main inherits Window {
     Rectangle {
         width: parent.width ; // 根据需要调整
         height: parent.height; // 根据需要调整
+        border-width: 1px;
+        border-color: green;
         for image_data in images : Rectangle {
             x: image_data.x * 1px;
             y: image_data.y * 1px;
