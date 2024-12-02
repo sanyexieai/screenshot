@@ -92,8 +92,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     // 初始化热键管理器
     let manager = GlobalHotKeyManager::new()?;
-    let hotkey = HotKey::new(Some(Modifiers::ALT), Code::KeyQ);
-    manager.register(hotkey)?;
+    let hotkey_alt_q = HotKey::new(Some(Modifiers::ALT), Code::KeyQ);
+    let hotkey_esc = HotKey::new(None, Code::Escape);
+    manager.register(hotkey_alt_q)?;
+    manager.register(hotkey_esc)?;
     
     let receiver = GlobalHotKeyEvent::receiver();
     println!("截图工具已启动，按 Alt+Q 开始截图");
@@ -103,6 +105,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     // 标记当前是否正处理截图
     let mut is_capturing = false;
+    let mut app_weak = None::<slint::Weak<AppWindow>>;
     
     // 创建一个定时器来检查热键事件
     let timer = slint::Timer::default();
@@ -111,11 +114,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::time::Duration::from_millis(100),
         move || {
             if let Ok(event) = receiver.try_recv() {
-                if event.id == hotkey.id() && !is_capturing {
+                if event.id == hotkey_alt_q.id() && !is_capturing {
                     is_capturing = true;
-                    // 创建并显示截图窗口
-                    if let Err(e) = show_screenshot_window(tx.clone()) {
-                        println!("显示截图窗口失败: {}", e);
+                    if let Ok(weak) = show_screenshot_window(tx.clone()) {
+                        app_weak = Some(weak);
+                    }
+                } else if event.id == hotkey_esc.id() && is_capturing {
+                    if let Some(weak) = &app_weak {
+                        if let Some(app) = weak.upgrade() {
+                            app.hide().unwrap();
+                            tx.send(()).unwrap();
+                        }
                     }
                 }
             }
@@ -133,8 +142,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<(), Box<dyn Error>> {
+fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<slint::Weak<AppWindow>, Box<dyn Error>> {
     let app = AppWindow::new()?;
+    let weak = app.as_weak();
     
     // 获取所有屏幕的总区域
     let (total_width, total_height, min_x, min_y) = get_total_screen_area()?;
@@ -191,7 +201,7 @@ fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<(), Box<dyn
     app.show()?;
     println!("Window shown");
     
-    Ok(())
+    Ok(weak)
 }
 
 fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn Error>> {
