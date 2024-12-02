@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 use screenshots::Screen;
 use slint::LogicalPosition;
 use std::error::Error;
@@ -22,7 +23,6 @@ slint::slint! {
         no-frame: true;
         width: 1px;
         height: 1px;
-        visible: false;
     }
 
     export { PreviewWindow }

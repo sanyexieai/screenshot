@@ -19,3 +19,7 @@ windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }
 
 [build-dependencies]
 slint-build = "1.8" 
+
+
+[profile.release]
+panic = "abort"
