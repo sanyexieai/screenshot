@@ -3834,11 +3834,13 @@ dependencies = [
  "chrono",
  "global-hotkey",
  "image 0.25.5",
+ "raw-window-handle",
  "screenshots",
  "slint",
  "slint-build",
  "tokio",
  "winapi",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

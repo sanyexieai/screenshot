@@ -5,23 +5,108 @@ use chrono::Local;
 use anyhow::Result;
 use global_hotkey::{GlobalHotKeyManager, hotkey::{HotKey, Modifiers, Code}, GlobalHotKeyEvent};
 use std::sync::mpsc::channel;
+use std::rc::Rc;
+use std::cell::RefCell;
+use slint::Window;
+use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 
+// 导入UI组件
 slint::include_modules!();
 
-// 定义一个简单的后台窗口组件
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE
+};
+
+// 定义窗口组件并导入PreviewWindow
 slint::slint! {
-    component MainWindow inherits Window {
+    import { PreviewWindow } from "ui/preview_window.slint";
+
+    export component BackgroundWindow inherits Window {
         background: transparent;
         no-frame: true;
         width: 1px;
         height: 1px;
         visible: false;
     }
+
+    export { PreviewWindow }
+}
+
+// 添加预览窗口状态结构体
+struct PreviewWindowState {
+    window: Rc<PreviewWindow>,
+}
+
+impl PreviewWindowState {
+    fn new(image_data: Vec<u8>, width: u32, height: u32) -> Rc<RefCell<Self>> {
+        let window = Rc::new(PreviewWindow::new().unwrap());
+        
+        // 创建slint图像
+        let mut pixel_buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(width, height);
+        let buffer = pixel_buffer.make_mut_bytes();
+        
+        // 复制并转换图像数据 - 假设输入是RGBA格式
+        for i in 0..width as usize * height as usize {
+            let src_idx = i * 4;
+            let dst_idx = i * 4;
+            if src_idx + 3 < image_data.len() && dst_idx + 3 < buffer.len() {
+                buffer[dst_idx] = image_data[src_idx + 2];     // B
+                buffer[dst_idx + 1] = image_data[src_idx + 1]; // G
+                buffer[dst_idx + 2] = image_data[src_idx];     // R
+                buffer[dst_idx + 3] = image_data[src_idx + 3]; // A
+            }
+        }
+        
+        let slint_image = slint::Image::from_rgba8(pixel_buffer);
+        window.set_screenshot(slint_image);
+        
+        let instance = Rc::new(RefCell::new(Self {
+            window: window.clone(),
+        }));
+        
+        let window_weak = window.as_weak();
+        window.on_pin_to_desktop(move || {
+            // 设置窗口始终置顶
+            #[cfg(target_os = "windows")]
+            if let Some(window) = window_weak.upgrade() {
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE
+                };
+                use windows_sys::Win32::Foundation::HWND;
+                
+                // Get the raw window handle
+                // if let raw_window_handle::RawWindowHandle::Win32(handle) = window.window().raw_window_handle() {
+                //     unsafe {
+                //         SetWindowPos(
+                //             handle.hwnd as HWND,
+                //             HWND_TOPMOST,
+                //             0, 0, 0, 0,
+                //             SWP_NOMOVE | SWP_NOSIZE
+                //         );
+                //     }
+                // }
+            }
+        });
+        
+        let window_weak = window.as_weak();
+        window.on_close_window(move || {
+            if let Some(window) = window_weak.upgrade() {
+                window.hide().unwrap();
+            }
+        });
+        
+        instance
+    }
+    
+    fn show(&self) {
+        self.window.show().unwrap();
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     // 创建一个隐藏的主窗口来保持事件循环
-    let main_window = MainWindow::new()?;
+    let main_window = BackgroundWindow::new()?;  // 使用BackgroundWindow而不是MainWindow
     
     // 初始化热键管理器
     let manager = GlobalHotKeyManager::new()?;
@@ -34,7 +119,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // 创建一个通道用于同步截图完成事件
     let (tx, rx) = channel();
     
-    // 标记当前是否正在处理截图
+    // 标记当前是否正处理截图
     let mut is_capturing = false;
     
     // 创建一个定时器来检查热键事件
@@ -144,8 +229,6 @@ fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn E
             && x + width as i32 <= display_info.x + display_info.width as i32
             && y + height as i32 <= display_info.y + display_info.height as i32 {
             
-            let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-            
             // 捕获选定区域
             let image = screen.capture_area(
                 x - display_info.x, 
@@ -154,8 +237,18 @@ fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn E
                 height
             )?;
             
+            // 打印实际的图像尺寸和数据大小，用于调试
+            println!("截图尺寸: {}x{}", width, height);
+            println!("图像数据大小: {}", image.to_vec().len());
+            
+            // 保存图片
+            let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
             let filename = format!("screenshot_{}.png", timestamp);
             image.save(&filename)?;
+            
+            // 显示预览窗口
+            let preview = PreviewWindowState::new(image.to_vec(), width, height);
+            preview.borrow().show();
             
             println!("区域截图已保存为: {}", filename);
             break;

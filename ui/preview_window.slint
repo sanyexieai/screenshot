@@ -1,0 +1,33 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+export component PreviewWindow inherits Window {
+    in-out property <image> screenshot;
+    callback pin-to-desktop();
+    callback close-window();
+    
+    title: "截图预览";
+    width: screenshot.width * 1px;
+    height: screenshot.height * 1px + 40px;
+    
+    VerticalBox {
+        Image {
+            source: root.screenshot;
+        }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 20px;
+            height: 40px;
+            padding: 5px;
+            
+            Button {
+                text: "固定到桌面";
+                clicked => { root.pin-to-desktop() }
+            }
+            Button {
+                text: "关闭";
+                clicked => { root.close-window() }
+            }
+        }
+    }
+}
+
