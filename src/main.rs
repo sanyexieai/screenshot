@@ -1,22 +1,17 @@
 use screenshots::Screen;
 use slint::LogicalPosition;
 use std::error::Error;
-use chrono::Local;
 use anyhow::Result;
 use global_hotkey::{GlobalHotKeyManager, hotkey::{HotKey, Modifiers, Code}, GlobalHotKeyEvent};
 use std::sync::mpsc::channel;
 use std::rc::Rc;
 use std::cell::RefCell;
-use slint::Window;
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+
 
 // 导入UI组件
 slint::include_modules!();
 
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SetWindowLongA, GWL_EXSTYLE, WS_EX_TOOLWINDOW
-};
+
 
 // 定义窗口组件并导入PreviewWindow
 slint::slint! {
@@ -117,7 +112,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         move || {
             if let Ok(event) = receiver.try_recv() {
                 if event.id == hotkey.id() && !is_capturing {
-                    println!("热键事件触发");
                     is_capturing = true;
                     // 创建并显示截图窗口
                     if let Err(e) = show_screenshot_window(tx.clone()) {
@@ -159,27 +153,25 @@ fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<(), Box<dyn
     let app_weak = app.as_weak();
     let tx_clone = tx.clone();
     app.on_selection_complete(move |area| {
-        println!("Selection complete callback triggered");
         if let Some(app) = app_weak.upgrade() {
-            // 先隐藏整个窗口
             app.hide().unwrap();
-            println!("Window hidden");
             
-            // 调整截图区域，排除边框（边框宽度为1px）
-            let border_width: u32 = 1;
+            // 调整截图区域，避免绿边
+            let capture_x = area.x as i32 + min_x + 1;  // 向右偏移1像素
+            let capture_y = area.y as i32 + min_y + 1;  // 向下偏移1像素
+            let capture_width = area.width as u32 - 2;   // 宽度减少2像素
+            let capture_height = area.height as u32 - 2;  // 高度减少2像素
+            
             if let Err(e) = capture_area(
-                (area.x as i32 + min_x + border_width as i32), 
-                (area.y as i32 + min_y + border_width as i32), 
-                (area.width as u32).saturating_sub(border_width * 2), 
-                (area.height as u32).saturating_sub(border_width * 2)
+                capture_x,
+                capture_y,
+                capture_width,
+                capture_height
             ) {
                 println!("截图失败: {}", e);
             }
             
-            println!("Screenshot taken");
-            // 通知截图完成
             tx_clone.send(()).unwrap();
-            println!("Completion signal sent");
         }
     });
     

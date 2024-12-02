@@ -111,6 +111,7 @@ export component AppWindow inherits Window {
                     root.current-y = self.mouse-y/1px;
                 }
             } else if (event.kind == PointerEventKind.up && root.is-selecting) {
+                root.is-selecting = false;
                 if (abs(root.current-x - root.start-x) > 5 && abs(root.current-y - root.start-y) > 5) {
                     root.selection-complete({
                         x: min(root.start-x, root.current-x),
@@ -119,7 +120,7 @@ export component AppWindow inherits Window {
                         height: abs(root.current-y - root.start-y)
                     });
                 }
-                root.is-selecting = false;
+                
             }
             EventResult.accept
         }
