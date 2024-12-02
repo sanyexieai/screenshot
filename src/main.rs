@@ -195,14 +195,12 @@ fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<(), Box<dyn
 }
 
 fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn Error>> {
-    // 确保宽度和高度大于0
     if width == 0 || height == 0 {
         return Ok(());
     }
 
     let screens = Screen::all()?;
     
-    // 找到包含选区的屏幕
     for screen in screens {
         let display_info = screen.display_info;
         if x >= display_info.x 
@@ -210,7 +208,6 @@ fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn E
             && x + width as i32 <= display_info.x + display_info.width as i32
             && y + height as i32 <= display_info.y + display_info.height as i32 {
             
-            // 捕获选定区域
             let image = screen.capture_area(
                 x - display_info.x, 
                 y - display_info.y, 
@@ -218,20 +215,16 @@ fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn E
                 height
             )?;
             
-            // 打印实际的图像尺寸和数据大小，用于调试
-            println!("截图尺寸: {}x{}", width, height);
-            println!("实际图像尺寸: {}x{}", image.width(), image.height());
-            println!("图像数据大小: {}", image.to_vec().len());
-            
-            // // 保存图片
-            // let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-            // let filename = format!("screenshot_{}.png", timestamp);
-            // image.save(&filename)?;
-            // println!("区域截图已保存为: {}", filename);
-            // 显示预览窗口
+            // 创建预览窗口
             let preview = PreviewWindowState::new(image.to_vec(), width, height);
+            
+            // 设置预览窗口位置到截图区域
+            preview.borrow().window.window().set_position(slint::LogicalPosition::new(
+                x as f32,
+                y as f32
+            ));
+            
             preview.borrow().show();
-
             break;
         }
     }
