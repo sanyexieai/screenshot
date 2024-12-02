@@ -1,0 +1,127 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+struct SelectionArea {
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+}
+
+export component AppWindow inherits Window {
+    background: transparent;
+    no-frame: true;
+    always-on-top: true;
+    
+    callback selection-complete(SelectionArea);
+    callback cancel-capture();
+    callback debug-log(string);
+    
+    in-out property <bool> is_selecting: false;
+    property <float> start-x: 0;
+    property <float> start-y: 0;
+    property <float> current-x: 0;
+    property <float> current-y: 0;
+    
+    init => {
+        root.debug-log("Window initialized");
+    }
+    
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+        
+        // 上方遮罩
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: min(root.start-y, root.current-y) * 1px;
+            background: #00000055;
+            visible: root.is-selecting;
+        }
+        
+        // 下方遮罩
+        Rectangle {
+            x: 0;
+            y: max(root.start-y, root.current-y) * 1px;
+            width: parent.width;
+            height: parent.height - self.y;
+            background: #00000055;
+            visible: root.is-selecting;
+        }
+        
+        // 左侧遮罩
+        Rectangle {
+            x: 0;
+            y: min(root.start-y, root.current-y) * 1px;
+            width: min(root.start-x, root.current-x) * 1px;
+            height: abs(root.current-y - root.start-y) * 1px;
+            background: #00000055;
+            visible: root.is-selecting;
+        }
+        
+        // 右侧遮罩
+        Rectangle {
+            x: max(root.start-x, root.current-x) * 1px;
+            y: min(root.start-y, root.current-y) * 1px;
+            width: parent.width - self.x;
+            height: abs(root.current-y - root.start-y) * 1px;
+            background: #00000055;
+            visible: root.is-selecting;
+        }
+        
+        Rectangle {
+            x: min(root.start-x, root.current-x) * 1px;
+            y: min(root.start-y, root.current-y) * 1px;
+            width: abs(root.current-x - root.start-x) * 1px;
+            height: abs(root.current-y - root.start-y) * 1px;
+            border-width: 1px;
+            border-color: green;
+            background: transparent;
+            visible: root.is-selecting;
+        } 
+    }
+    
+    FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.cancel-capture();
+                return EventResult.accept;
+            }
+            return EventResult.reject;
+        }
+    }
+
+    TouchArea {
+        mouse-cursor: crosshair;
+        width: parent.width;
+        height: parent.height;
+        pointer-event(event) => {
+            // 将 PointerEventKind 转换为字符串
+            if (event.kind == PointerEventKind.down) {
+                root.start-x = self.mouse-x/1px;
+                root.start-y = self.mouse-y/1px;
+                root.current-x = self.mouse-x/1px;
+                root.current-y = self.mouse-y/1px;
+                root.is-selecting = true;
+            } else if (event.kind == PointerEventKind.move) {
+                if (root.is-selecting) {
+                    root.current-x = self.mouse-x/1px;
+                    root.current-y = self.mouse-y/1px;
+                }
+            } else if (event.kind == PointerEventKind.up && root.is-selecting) {
+                if (abs(root.current-x - root.start-x) > 5 && abs(root.current-y - root.start-y) > 5) {
+                    root.selection-complete({
+                        x: min(root.start-x, root.current-x),
+                        y: min(root.start-y, root.current-y),
+                        width: abs(root.current-x - root.start-x),
+                        height: abs(root.current-y - root.start-y)
+                    });
+                }
+                root.is-selecting = false;
+            }
+            EventResult.accept
+        }
+    }
+} 

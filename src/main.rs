@@ -1,214 +1,184 @@
-use screenshot::impl_platform::{self, impl_hotkey_manager::HotkeyManager};
-use slint::{Image, LogicalPosition, ModelRc, SharedPixelBuffer, VecModel, Weak};
+use screenshots::Screen;
+use slint::LogicalPosition;
+use std::error::Error;
+use chrono::Local;
 use anyhow::Result;
-use xcap::{image::{DynamicImage, GenericImage, RgbaImage}, Monitor};
-use std::{sync::{mpsc, Arc, Mutex}, thread, time::Duration};
+use global_hotkey::{GlobalHotKeyManager, hotkey::{HotKey, Modifiers, Code}, GlobalHotKeyEvent};
+use std::sync::mpsc::channel;
 
 slint::include_modules!();
 
-// 定义一个回调函数类型，要求实现 Send
-type Callback = Arc<Mutex<Box<dyn FnMut(Main) + Send>>>;
+// 定义一个简单的后台窗口组件
+slint::slint! {
+    component MainWindow inherits Window {
+        background: transparent;
+        no-frame: true;
+        width: 1px;
+        height: 1px;
+        visible: false;
+    }
+}
 
-fn main() -> Result<()>{
-    let main = Main::new()?; 
-    // 创建一个 Arc<Mutex<i32>>，初始化值为 0
-    let app = Arc::new(Mutex::new(main.as_weak()));
+fn main() -> Result<(), Box<dyn Error>> {
+    // 创建一个隐藏的主窗口来保持事件循环
+    let main_window = MainWindow::new()?;
+    
+    // 初始化热键管理器
+    let manager = GlobalHotKeyManager::new()?;
+    let hotkey = HotKey::new(Some(Modifiers::ALT), Code::KeyQ);
+    manager.register(hotkey)?;
+    
+    let receiver = GlobalHotKeyEvent::receiver();
+    println!("截图工具已启动，按 Alt+Q 开始截图");
+    
+    // 创建一个通道用于同步截图完成事件
+    let (tx, rx) = channel();
+    
+    // 标记当前是否正在处理截图
+    let mut is_capturing = false;
+    
+    // 创建一个定时器来检查热键事件
+    let timer = slint::Timer::default();
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(100),
+        move || {
+            if let Ok(event) = receiver.try_recv() {
+                if event.id == hotkey.id() && !is_capturing {
+                    println!("热键事件触发");
+                    is_capturing = true;
+                    // 创建并显示截图窗口
+                    if let Err(e) = show_screenshot_window(tx.clone()) {
+                        println!("显示截图窗口失败: {}", e);
+                    }
+                }
+            }
+            // 检查截图是否完成
+            while let Ok(_) = rx.try_recv() {
+                // 截图完成，重置状态
+                is_capturing = false;
+            }
+        },
+    );
 
-    // 创建一个回调函数，使用 Arc<Mutex<...>> 包装以支持跨线程调用
-    let callback: Callback = Arc::new(Mutex::new(Box::new(|main| {
-        let image_list: VecModel<ImageData> = VecModel::from(vec![]);
-        main.set_images(ModelRc::new(image_list));
-        // println!("Callback called with value: {}", value);
-    })));
-
-    // 创建一个线程
-    let app_clone = Arc::clone(&app);
-    let callback_clone = Arc::clone(&callback); // 克隆回调
-
-    let thread = thread::spawn(move || {
-        // 在线程中修改计数器
-        {
-            let mut window = app_clone.lock().unwrap().upgrade().unwrap(); // 获取锁
-            // 调用回调函数
-            let mut callback = callback_clone.lock().unwrap(); // 获取锁
-            callback(window); // 使用解引用操作符调用
-        }
-    });
+    // 运行主事件循环
+    main_window.run()?;
+    
     Ok(())
 }
 
-// fn main() -> Result<()> {
-//     let main = Main::new()?; 
-//     // let app_clone = main.as_weak();
-//     let app =  Arc::new(Mutex::new(main.as_weak()));
-//     let app_clone = Arc::clone(&app);
-//     // 创建一个共享的二维动态数组
-//     let shared_data: Arc<Mutex<Vec<Vec<i32>>>> = Arc::new(Mutex::new(Vec::new()));
-//     thread::spawn(move || {
-//         // 初始化 image_list
-//         let image_list = VecModel::from(vec![]);
-//         image_list.push(ImageData {
-//             x: 1,
-//             y: 1,
-//             width: 1,
-//             height: 1,
-//             image: Image::from_rgba8(SharedPixelBuffer::new(1, 1)),
-//         });
-//         // let app_clone = Arc::clone(&app);
-//         // let app_clone = app.clone();
-//         // let t = app_clone.upgrade().unwrap();
-//         // let app_clone = t.as_weak();
-//         const MOD_CONTROL: u32 = 0x0002; // Ctrl 键修饰符
-//         const VK_A: u32 = 0x41;           // A 键虚拟键码x
-//         // 注册快捷键 Ctrl + A
-//         HotkeyManager::register_hotkey(1, MOD_CONTROL, VK_A, move || {
-//             // app_clone_clone;
-//             // screenshot(app_clone).unwrap();
-//             // let app_clone = t.as_weak();
-//             // let image_list: VecModel<ImageData> = VecModel::from(vec![]);
-//             // tx.send(image_list).unwrap();
-//             // app_clone_clone.upgrade().unwrap().set_images(ModelRc::new(image_list));
-//             app_clone.lock().unwrap().upgrade().unwrap().set_images(ModelRc::new(image_list));
-//             println!("Control + A pressed!"); // 输出热键触发信息
-//         });
-//         // app_clone.lock().unwrap().upgrade().unwrap().set_images(ModelRc::new(image_list));
-//     });
-//     main.run()?;
-//     Ok(())
-// }
-
-// fn main() -> Result<()> {
-//     let main = Main::new()?; 
-//     let desktop_size = get_desktop_size()?;
-//     print!("Desktop size: {} x {}\n", desktop_size.width, desktop_size.height);
+fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<(), Box<dyn Error>> {
+    let app = AppWindow::new()?;
     
-//     // 设置窗口大小和位置
-//     main.window().set_size(desktop_size);
-//     main.window().set_position(LogicalPosition::new(0.0, 0.0));
-//     // 创建一个共享的二维动态数组
-//     let shared_data: Arc<Mutex<Vec<Vec<i32>>>> = Arc::new(Mutex::new(Vec::new()));
-//     let app_clone = main.as_weak();
-
-//     register_hotkey(shared_data.clone(), ||{
-//         app_clone.upgrade().unwrap().set_images(ModelRc::new(image_list));
-//         println!("Control + A pressed!");
-//     });
-//     main.run()?;
-//     Ok(())
-// }
-
-
-fn screenshot(app_clone: Weak<Main>) -> Result<()> {
-        let desktop_size = get_desktop_size()?;
-        // 创建一个线程安全的共享 merged_img 对象
-        let merged_img = Arc::new(Mutex::new(RgbaImage::new(desktop_size.width as u32, desktop_size.height as u32)));
-        let merged_img_clone = Arc::clone(&merged_img);
-        let monitors = Monitor::all().unwrap();
-        
-        // 初始化 image_list
-        let image_list: VecModel<ImageData> = VecModel::from(vec![]);
-
-        // 并行处理每个监视器的图像捕获
-        monitors.iter().for_each(|monitor| {
-            let image = monitor.capture_image().unwrap();
-            let width = monitor.width();
-            let height = monitor.height();
-            let data = image.as_raw();
+    // 获取所有屏幕的总区域
+    let (total_width, total_height, min_x, min_y) = get_total_screen_area()?;
+    let desktop_size = slint::LogicalSize::new(total_width as f32, total_height as f32);
+    
+    // 设置窗口大小和位置，考虑多显示器的偏移
+    app.window().set_size(desktop_size);
+    app.window().set_position(LogicalPosition::new(min_x as f32, min_y as f32));
+    
+    // 添加日志回调
+    app.on_debug_log(|msg| {
+        println!("UI Debug: {}", msg);
+    });
+    
+    // 处理选区完成
+    let app_weak = app.as_weak();
+    let tx_clone = tx.clone();
+    app.on_selection_complete(move |area| {
+        println!("Selection complete callback triggered");
+        if let Some(app) = app_weak.upgrade() {
+            // 先隐藏整个窗口
+            app.hide().unwrap();
+            println!("Window hidden");
             
-            let mut buffer = SharedPixelBuffer::new(width, height);
-            buffer.make_mut_bytes().clone_from_slice(data); // 使用 `clone_from_slice` 复制像素数据
-        
-            // 生成图像数据
-            let image_data = Image::from_rgba8(buffer);
-
-            // // 加锁时只修改 merged_img_lock，而不是整个操作都加锁
-            // {
-            //     let mut merged_img_lock = merged_img_clone.lock().unwrap();
-            //     // 如果需要的话，可以在这里更新 merged_img
-            //     let dynamic_image = DynamicImage::ImageRgba8(RgbaImage::from_raw(width, height, data.to_vec()).unwrap());
-            //     _ = merged_img_lock.copy_from(&dynamic_image, monitor.x() as u32, monitor.y() as u32);
-            // }
-
-            image_list.push(ImageData {
-                x: monitor.x(),
-                y: monitor.y(),
-                width: width as i32,
-                height: height as i32,
-                image: image_data,
-            });
-
-            print!("Monitor: {} - {} - {} - {}\n", monitor.x(), monitor.y(), monitor.width(), monitor.height());
-        });
-        Ok(())
+            // 调整截图区域，排除边框（边框宽度为1px）
+            let border_width: u32 = 1;
+            if let Err(e) = capture_area(
+                (area.x as i32 + min_x + border_width as i32), 
+                (area.y as i32 + min_y + border_width as i32), 
+                (area.width as u32).saturating_sub(border_width * 2), 
+                (area.height as u32).saturating_sub(border_width * 2)
+            ) {
+                println!("截图失败: {}", e);
+            }
+            
+            println!("Screenshot taken");
+            // 通知截图完成
+            tx_clone.send(()).unwrap();
+            println!("Completion signal sent");
+        }
+    });
+    
+    // 处理取消截图
+    let app_weak = app.as_weak();
+    app.on_cancel_capture(move || {
+        if let Some(app) = app_weak.upgrade() {
+            app.hide().unwrap();
+            tx.send(()).unwrap();
+        }
+    });
+    
+    // 显示窗口
+    println!("Showing window");
+    app.show()?;
+    println!("Window shown");
+    
+    Ok(())
 }
 
-// fn main() -> Result<()> {
-//     let main = Main::new()?; 
-//     let desktop_size = get_desktop_size()?;
-//     print!("Desktop size: {} x {}\n", desktop_size.width, desktop_size.height);
+fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn Error>> {
+    // 确保宽度和高度大于0
+    if width == 0 || height == 0 {
+        return Ok(());
+    }
+
+    let screens = Screen::all()?;
     
-//     // 设置窗口大小和位置
-//     main.window().set_size(desktop_size);
-//     main.window().set_position(LogicalPosition::new(0.0, 0.0));
+    // 找到包含选区的屏幕
+    for screen in screens {
+        let display_info = screen.display_info;
+        if x >= display_info.x 
+            && y >= display_info.y 
+            && x + width as i32 <= display_info.x + display_info.width as i32
+            && y + height as i32 <= display_info.y + display_info.height as i32 {
+            
+            let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+            
+            // 捕获选定区域
+            let image = screen.capture_area(
+                x - display_info.x, 
+                y - display_info.y, 
+                width, 
+                height
+            )?;
+            
+            let filename = format!("screenshot_{}.png", timestamp);
+            image.save(&filename)?;
+            
+            println!("区域截图已保存为: {}", filename);
+            break;
+        }
+    }
 
-//     // // 创建一个线程安全的共享 merged_img 对象
-//     // let merged_img = Arc::new(Mutex::new(RgbaImage::new(desktop_size.width as u32, desktop_size.height as u32)));
-//     // let merged_img_clone = Arc::clone(&merged_img);
-//     let app_clone = main.as_weak();
+    Ok(())
+}
 
-//     main.on_drawing(move || {
-//         let monitors = Monitor::all().unwrap();
-        
-//         // 初始化 image_list
-//         let image_list = VecModel::from(vec![]);
-
-//         // 并行处理每个监视器的图像捕获
-//         monitors.iter().for_each(|monitor| {
-//             let image = monitor.capture_image().unwrap();
-//             let width = monitor.width();
-//             let height = monitor.height();
-//             let data = image.as_raw();
-
-//             // 将帧数据转换为 SharedPixelBuffer
-//             let mut buffer = SharedPixelBuffer::new(width, height);
-//             buffer.make_mut_bytes().copy_from_slice(data); // 复制像素数据到缓冲区
-
-//             // 生成图像数据
-//             let image_data = Image::from_rgba8(buffer);
-
-//             // // 加锁时只修改 merged_img_lock，而不是整个操作都加锁
-//             // {
-//             //     let mut merged_img_lock = merged_img_clone.lock().unwrap();
-//             //     // 如果需要的话，可以在这里更新 merged_img
-//             //     let dynamic_image = DynamicImage::ImageRgba8(RgbaImage::from_raw(width, height, data.to_vec()).unwrap());
-//             //     _ = merged_img_lock.copy_from(&dynamic_image, monitor.x() as u32, monitor.y() as u32);
-//             // }
-
-//             image_list.push(ImageData {
-//                 x: monitor.x(),
-//                 y: monitor.y(),
-//                 width: width as i32,
-//                 height: height as i32,
-//                 image: image_data,
-//             });
-
-//             print!("Monitor: {} - {} - {} - {}\n", monitor.x(), monitor.y(), monitor.width(), monitor.height());
-//         });
-
-//         app_clone.upgrade().unwrap().set_images(ModelRc::new(image_list));
-//     });
-
-//     main.on_save(move || {
-//         // let merged_img_lock = merged_img.lock().unwrap(); // 锁定 merged_img
-//         // merged_img_lock.save("merged.png").unwrap(); // 保存合并后的图像
-//     });
-
-//     main.run()?;
-//     Ok(())
-// }
-
-// 获取桌面大小，包括多个显示器
-fn get_desktop_size() -> Result<slint::LogicalSize> {
-    impl_platform::impl_desktop::ImplDesktop::get_desktop_size()
-        .map(|(width, height)| slint::LogicalSize::new(width as f32, height as f32))
+fn get_total_screen_area() -> Result<(i32, i32, i32, i32)> {
+    let screens = Screen::all()?;
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+    
+    for screen in screens {
+        let info = screen.display_info;
+        min_x = min_x.min(info.x);
+        min_y = min_y.min(info.y);
+        max_x = max_x.max(info.x + info.width as i32);
+        max_y = max_y.max(info.y + info.height as i32);
+    }
+    
+    Ok((max_x - min_x, max_y - min_y, min_x, min_y))
 }
