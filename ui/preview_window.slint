@@ -4,28 +4,107 @@ export component PreviewWindow inherits Window {
     in-out property <image> screenshot;
     callback pin-to-desktop();
     callback close-window();
+    callback move-window(float, float);
+    
+    private property <bool> is_dragging: false;
+    private property <float> drag-start-x;
+    private property <float> drag-start-y;
+    private property <bool> show-decorations: false;
     
     title: "截图预览";
     width: screenshot.width * 1px;
-    height: screenshot.height * 1px + 40px;
+    height: screenshot.height * 1px;
+    no-frame: true;
+    always-on-top: true;
     
-    VerticalBox {
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        
+        // 拖拽区域
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.is_dragging = true;
+                    root.drag-start-x = self.mouse-x / 1px;
+                    root.drag-start-y = self.mouse-y / 1px;
+                }
+                if (event.kind == PointerEventKind.up) {
+                    root.is_dragging = false;
+                }
+                if (event.kind == PointerEventKind.move && root.is_dragging) {
+                    root.move-window(self.mouse-x / 1px - root.drag-start-x, self.mouse-y / 1px - root.drag-start-y);
+                }
+                return EventResult.accept;
+            }
+            
+            // 双击切换装饰
+            double-clicked => {
+                root.show-decorations = !root.show-decorations;
+            }
+        }
+        
         Image {
             source: root.screenshot;
         }
-        HorizontalLayout {
-            alignment: center;
-            spacing: 20px;
-            height: 40px;
-            padding: 5px;
+        
+        // 边框
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            border-width: root.show-decorations ? 1px : 0px;
+            border-color: #3399ff;
+            animate border-width { duration: 150ms; }
+        }
+        
+        // 顶部关闭区域
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 24px;
+            background: #00000000;
+            visible: root.show-decorations;
             
-            Button {
-                text: "固定到桌面";
-                clicked => { root.pin-to-desktop() }
+            TouchArea {
+                width: parent.width;
+                height: parent.height;
+                
+                Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    animate opacity { duration: 150ms; }
+                }
             }
-            Button {
-                text: "关闭";
-                clicked => { root.close-window() }
+            
+            // 右上角关闭按钮
+            TouchArea {
+                x: parent.width - 24px;
+                width: 24px;
+                height: 24px;
+                mouse-cursor: pointer;
+                clicked => { root.close-window(); }
+                
+                Rectangle {
+                    width: 20px;
+                    height: 20px;
+                    x: 2px;
+                    y: 2px;
+                    background: parent.has-hover ? #ff0000 : #00000000;
+                    animate background { duration: 150ms; }
+                    
+                    Text {
+                        text: "×";
+                        color: white;
+                        font-size: 14px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
             }
         }
     }

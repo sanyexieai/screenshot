@@ -15,7 +15,7 @@ slint::include_modules!();
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE
+    SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SetWindowLongA, GWL_EXSTYLE, WS_EX_TOOLWINDOW
 };
 
 // 定义窗口组件并导入PreviewWindow
@@ -51,9 +51,9 @@ impl PreviewWindowState {
             let src_idx = i * 4;
             let dst_idx = i * 4;
             if src_idx + 3 < image_data.len() && dst_idx + 3 < buffer.len() {
-                buffer[dst_idx] = image_data[src_idx + 2];     // B
+                buffer[dst_idx] = image_data[src_idx];     // R
                 buffer[dst_idx + 1] = image_data[src_idx + 1]; // G
-                buffer[dst_idx + 2] = image_data[src_idx];     // R
+                buffer[dst_idx + 2] = image_data[src_idx + 2];     // B
                 buffer[dst_idx + 3] = image_data[src_idx + 3]; // A
             }
         }
@@ -64,31 +64,6 @@ impl PreviewWindowState {
         let instance = Rc::new(RefCell::new(Self {
             window: window.clone(),
         }));
-        
-        let window_weak = window.as_weak();
-        window.on_pin_to_desktop(move || {
-            // 设置窗口始终置顶
-            #[cfg(target_os = "windows")]
-            if let Some(window) = window_weak.upgrade() {
-                use windows_sys::Win32::UI::WindowsAndMessaging::{
-                    SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE
-                };
-                use windows_sys::Win32::Foundation::HWND;
-                
-                // Get the raw window handle
-                // if let raw_window_handle::RawWindowHandle::Win32(handle) = window.window().raw_window_handle() {
-                //     unsafe {
-                //         SetWindowPos(
-                //             handle.hwnd as HWND,
-                //             HWND_TOPMOST,
-                //             0, 0, 0, 0,
-                //             SWP_NOMOVE | SWP_NOSIZE
-                //         );
-                //     }
-                // }
-            }
-        });
-        
         let window_weak = window.as_weak();
         window.on_close_window(move || {
             if let Some(window) = window_weak.upgrade() {
@@ -96,6 +71,18 @@ impl PreviewWindowState {
             }
         });
         
+        let window_weak = window.as_weak();
+        window.on_move_window(move |offset_x, offset_y| {
+            if let Some(window) = window_weak.upgrade() {
+                let pos = window.window().position();
+                let scale = window.window().scale_factor();
+                let logical_pos = pos.to_logical(scale);
+                window.window().set_position(slint::LogicalPosition::new(
+                    logical_pos.x + offset_x,
+                    logical_pos.y + offset_y
+                ));
+            }
+        });
         instance
     }
     
@@ -204,7 +191,6 @@ fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<(), Box<dyn
             tx.send(()).unwrap();
         }
     });
-    
     // 显示窗口
     println!("Showing window");
     app.show()?;
@@ -239,18 +225,18 @@ fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn E
             
             // 打印实际的图像尺寸和数据大小，用于调试
             println!("截图尺寸: {}x{}", width, height);
+            println!("实际图像尺寸: {}x{}", image.width(), image.height());
             println!("图像数据大小: {}", image.to_vec().len());
             
-            // 保存图片
-            let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-            let filename = format!("screenshot_{}.png", timestamp);
-            image.save(&filename)?;
-            
+            // // 保存图片
+            // let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+            // let filename = format!("screenshot_{}.png", timestamp);
+            // image.save(&filename)?;
+            // println!("区域截图已保存为: {}", filename);
             // 显示预览窗口
             let preview = PreviewWindowState::new(image.to_vec(), width, height);
             preview.borrow().show();
-            
-            println!("区域截图已保存为: {}", filename);
+
             break;
         }
     }
