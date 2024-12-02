@@ -144,6 +144,9 @@ fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<(), Box<dyn
     app.window().set_size(desktop_size);
     app.window().set_position(LogicalPosition::new(min_x as f32, min_y as f32));
     
+    // 在显示窗口之前设置遮罩
+    app.set_show_mask(true);
+    
     // 添加日志回调
     app.on_debug_log(|msg| {
         println!("UI Debug: {}", msg);

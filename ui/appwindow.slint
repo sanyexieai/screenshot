@@ -18,6 +18,7 @@ export component AppWindow inherits Window {
     callback debug-log(string);
     
     in-out property <bool> is_selecting: false;
+    in-out property <bool> show_mask: false;
     property <float> start-x: 0;
     property <float> start-y: 0;
     property <float> current-x: 0;
@@ -39,7 +40,7 @@ export component AppWindow inherits Window {
             width: parent.width;
             height: min(root.start-y, root.current-y) * 1px;
             background: #00000055;
-            visible: root.is-selecting;
+            visible: root.show-mask;
         }
         
         // 下方遮罩
@@ -49,7 +50,7 @@ export component AppWindow inherits Window {
             width: parent.width;
             height: parent.height - self.y;
             background: #00000055;
-            visible: root.is-selecting;
+            visible: root.show-mask;
         }
         
         // 左侧遮罩
@@ -59,7 +60,7 @@ export component AppWindow inherits Window {
             width: min(root.start-x, root.current-x) * 1px;
             height: abs(root.current-y - root.start-y) * 1px;
             background: #00000055;
-            visible: root.is-selecting;
+            visible: root.show-mask;
         }
         
         // 右侧遮罩
@@ -69,7 +70,7 @@ export component AppWindow inherits Window {
             width: parent.width - self.x;
             height: abs(root.current-y - root.start-y) * 1px;
             background: #00000055;
-            visible: root.is-selecting;
+            visible: root.show-mask;
         }
         
         Rectangle {
@@ -87,6 +88,7 @@ export component AppWindow inherits Window {
     FocusScope {
         key-pressed(event) => {
             if (event.text == Key.Escape) {
+                root.show-mask = false;
                 root.cancel-capture();
                 return EventResult.accept;
             }
@@ -113,6 +115,7 @@ export component AppWindow inherits Window {
                 }
             } else if (event.kind == PointerEventKind.up && root.is-selecting) {
                 root.is-selecting = false;
+                root.show-mask = false;
                 if (abs(root.current-x - root.start-x) > 5 && abs(root.current-y - root.start-y) > 5) {
                     root.selection-complete({
                         x: min(root.start-x, root.current-x),
