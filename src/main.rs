@@ -9,26 +9,11 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use arboard::Clipboard;
 use image::{ImageBuffer, Rgba, RgbaImage};
+use tray_icon::{Icon, TrayIcon, TrayIconBuilder, menu::{Menu, MenuEvent, MenuItem}};
 
 
 // 导入UI组件
 slint::include_modules!();
-
-
-
-// 定义窗口组件并导入PreviewWindow
-slint::slint! {
-    import { PreviewWindow } from "ui/preview_window.slint";
-
-    export component BackgroundWindow inherits Window {
-        background: transparent;
-        no-frame: true;
-        width: 1px;
-        height: 1px;
-    }
-
-    export { PreviewWindow }
-}
 
 // 添加预览窗口状态结构体
 struct PreviewWindowState {
@@ -89,9 +74,37 @@ impl PreviewWindowState {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // 创建托盘菜单
+    let menu = Menu::new();
+    let quit_item = MenuItem::new("退出", true, None);
+    menu.append_items(&[&quit_item])?;
+    
+    // 创建托盘图标
+    let icon = Icon::from_path("resources/app.ico", None)?;
+    let _tray_icon = TrayIconBuilder::new()
+        .with_menu(Box::new(menu))
+        .with_tooltip("截图工具")
+        .with_icon(icon)
+        .build()?;
+    
+    // 处理托盘菜单事件
+    let menu_channel = MenuEvent::receiver();
+    let timer_menu = slint::Timer::default();
+    timer_menu.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(100),
+        move || {
+            if let Ok(event) = menu_channel.try_recv() {
+                if event.id == quit_item.id() {
+                    std::process::exit(0);
+                }
+            }
+        },
+    );
+    
     // 创建一个隐藏的主窗口来保持事件循环
     let main_window = BackgroundWindow::new()?;  // 使用BackgroundWindow而不是MainWindow
-    
+        
     // 初始化热键管理器
     let manager = GlobalHotKeyManager::new()?;
     let hotkey_alt_q = HotKey::new(Some(Modifiers::ALT), Code::KeyQ);
