@@ -1,4 +1,4 @@
-// #![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 use screenshots::Screen;
 use slint::LogicalPosition;
 use std::error::Error;
@@ -10,7 +10,13 @@ use std::cell::RefCell;
 use arboard::Clipboard;
 use image::{ImageBuffer, Rgba, RgbaImage};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, menu::{Menu, MenuEvent, MenuItem}};
+use rust_embed::RustEmbed;
+use image::ImageReader;
+use std::io::Cursor;
 
+#[derive(RustEmbed)]
+#[folder = "resources/"]
+struct Asset;
 
 // 导入UI组件
 slint::include_modules!();
@@ -74,13 +80,28 @@ impl PreviewWindowState {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // 从嵌入的资源中加载图标
+    let icon_data = Asset::get("app.ico").expect("Failed to load icon");
+    
+    // 解码ico文件
+    let img = ImageReader::new(Cursor::new(icon_data.data))
+        .with_guessed_format()?
+        .decode()?
+        .into_rgba8();
+    
     // 创建托盘菜单
     let menu = Menu::new();
     let quit_item = MenuItem::new("退出", true, None);
     menu.append_items(&[&quit_item])?;
     
     // 创建托盘图标
-    let icon = Icon::from_path("resources/app.ico", None)?;
+    let width = img.width();
+    let height = img.height();
+    let icon = Icon::from_rgba(
+        img.into_raw(),
+        width,
+        height
+    )?;
     let _tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_tooltip("截图工具")
