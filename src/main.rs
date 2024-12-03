@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 use screenshots::Screen;
 use slint::LogicalPosition;
 use std::error::Error;
@@ -177,6 +177,8 @@ fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<slint::Weak
             let capture_width = area.width as u32 - 4;   // 宽度减少2像素
             let capture_height = area.height as u32 - 4;  // 高度减少2像素
             
+            // 延时200ms
+            std::thread::sleep(std::time::Duration::from_millis(200));
             if let Err(e) = capture_area(
                 capture_x,
                 capture_y,
@@ -286,6 +288,8 @@ fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn E
     
     // 创建预览窗口
     let preview = PreviewWindowState::new(image_data, width, height);
+    // 打印截图区域
+    println!("截图区域: x={}, y={}, width={}, height={}", x, y, width, height);
     preview.borrow().window.window().set_position(slint::LogicalPosition::new(
         x as f32,
         y as f32
