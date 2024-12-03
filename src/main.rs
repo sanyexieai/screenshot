@@ -7,6 +7,8 @@ use global_hotkey::{GlobalHotKeyManager, hotkey::{HotKey, Modifiers, Code}, Glob
 use std::sync::mpsc::channel;
 use std::rc::Rc;
 use std::cell::RefCell;
+use arboard::Clipboard;
+use image::{ImageBuffer, Rgba};
 
 
 // 导入UI组件
@@ -170,10 +172,10 @@ fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<slint::Weak
             app.hide().unwrap();
             
             // 调整截图区域，避免绿边
-            let capture_x = area.x as i32 + min_x + 1;  // 向右偏移1像素
-            let capture_y = area.y as i32 + min_y + 1;  // 向下偏移1像素
-            let capture_width = area.width as u32 - 2;   // 宽度减少2像素
-            let capture_height = area.height as u32 - 2;  // 高度减少2像素
+            let capture_x = area.x as i32 + min_x + 2;  // 向右偏移1像素
+            let capture_y = area.y as i32 + min_y + 2;  // 向下偏移1像素
+            let capture_width = area.width as u32 - 4;   // 宽度减少2像素
+            let capture_height = area.height as u32 - 4;  // 高度减少2像素
             
             if let Err(e) = capture_area(
                 capture_x,
@@ -225,15 +227,30 @@ fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn E
                 height
             )?;
             
+            // 复制到剪贴板
+            let mut clipboard = Clipboard::new()?;
+            let image_data = image.to_vec();
+            
+            // 创建RGBA图像
+            let img_buffer = ImageBuffer::<Rgba<u8>, _>::from_raw(
+                width,
+                height,
+                image_data
+            ).unwrap();
+            
+            // 设置到剪贴板
+            clipboard.set_image(arboard::ImageData {
+                width: width as usize,
+                height: height as usize,
+                bytes: img_buffer.into_raw().into(),
+            })?;
+            
             // 创建预览窗口
             let preview = PreviewWindowState::new(image.to_vec(), width, height);
-            
-            // 设置预览窗口位置到截图区域
             preview.borrow().window.window().set_position(slint::LogicalPosition::new(
                 x as f32,
                 y as f32
             ));
-            
             preview.borrow().show();
             break;
         }
