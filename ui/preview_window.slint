@@ -20,7 +20,7 @@ export component PreviewWindow inherits Window {
     Rectangle {
         width: parent.width;
         height: parent.height;
-        
+        clip: true; // 启用裁剪
         // 拖拽区域
         TouchArea {
             width: parent.width;
@@ -56,8 +56,8 @@ export component PreviewWindow inherits Window {
             y: 0;
             width: parent.width;
             height: parent.height;
-            border-width: root.show-decorations ? 1px : 0px;
-            border-color: #3399ff;
+            border-width: 1px;
+            border-color: root.show-decorations ?#3399ff:transparent;
             animate border-width { duration: 150ms; }
         }
         

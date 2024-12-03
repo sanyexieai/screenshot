@@ -8,7 +8,7 @@ use std::sync::mpsc::channel;
 use std::rc::Rc;
 use std::cell::RefCell;
 use arboard::Clipboard;
-use image::{ImageBuffer, Rgba};
+use image::{ImageBuffer, Rgba, RgbaImage};
 
 
 // 导入UI组件
@@ -169,8 +169,8 @@ fn show_screenshot_window(tx: std::sync::mpsc::Sender<()>) -> Result<slint::Weak
     let tx_clone = tx.clone();
     app.on_selection_complete(move |area| {
         if let Some(app) = app_weak.upgrade() {
+            app.set_show_decorations(false);
             app.hide().unwrap();
-            
             // 调整截图区域，避免绿边
             let capture_x = area.x as i32 + min_x + 2;  // 向右偏移1像素
             let capture_y = area.y as i32 + min_y + 2;  // 向下偏移1像素
@@ -213,48 +213,84 @@ fn capture_area(x: i32, y: i32, width: u32, height: u32) -> Result<(), Box<dyn E
 
     let screens = Screen::all()?;
     
+    // 创建一个完整的图像缓冲区
+    let mut full_image = RgbaImage::new(width, height);
+    
+    // 遍历所有屏幕，将各部分截图拼接到完整图像中
     for screen in screens {
         let display_info = screen.display_info;
-        if x >= display_info.x 
-            && y >= display_info.y 
-            && x + width as i32 <= display_info.x + display_info.width as i32
-            && y + height as i32 <= display_info.y + display_info.height as i32 {
+        
+        // 计算当前屏幕与选区的交叉区域
+        let screen_x = display_info.x;
+        let screen_y = display_info.y;
+        let screen_right = screen_x + display_info.width as i32;
+        let screen_bottom = screen_y + display_info.height as i32;
+        
+        let capture_right = x + width as i32;
+        let capture_bottom = y + height as i32;
+        
+        // 计算交叉区域
+        let intersect_left = x.max(screen_x);
+        let intersect_top = y.max(screen_y);
+        let intersect_right = capture_right.min(screen_right);
+        let intersect_bottom = capture_bottom.min(screen_bottom);
+        
+        // 如果有交叉区域
+        if intersect_left < intersect_right && intersect_top < intersect_bottom {
+            // 计算在完整图像中的偏移
+            let offset_x = (intersect_left - x) as u32;
+            let offset_y = (intersect_top - y) as u32;
             
-            let image = screen.capture_area(
-                x - display_info.x, 
-                y - display_info.y, 
-                width, 
-                height
+            // 计算需要捕获的区域大小
+            let capture_width = (intersect_right - intersect_left) as u32;
+            let capture_height = (intersect_bottom - intersect_top) as u32;
+            
+            // 捕获当前屏幕的部分
+            let part_image = screen.capture_area(
+                intersect_left - screen_x,
+                intersect_top - screen_y,
+                capture_width,
+                capture_height
             )?;
             
-            // 复制到剪贴板
-            let mut clipboard = Clipboard::new()?;
-            let image_data = image.to_vec();
-            
-            // 创建RGBA图像
-            let img_buffer = ImageBuffer::<Rgba<u8>, _>::from_raw(
-                width,
-                height,
-                image_data
-            ).unwrap();
-            
-            // 设置到剪贴板
-            clipboard.set_image(arboard::ImageData {
-                width: width as usize,
-                height: height as usize,
-                bytes: img_buffer.into_raw().into(),
-            })?;
-            
-            // 创建预览窗口
-            let preview = PreviewWindowState::new(image.to_vec(), width, height);
-            preview.borrow().window.window().set_position(slint::LogicalPosition::new(
-                x as f32,
-                y as f32
-            ));
-            preview.borrow().show();
-            break;
+            // 将部分图像复制到完整图像中
+            let part_data = part_image.to_vec();
+            for y in 0..capture_height {
+                for x in 0..capture_width {
+                    let src_idx = ((y * capture_width + x) * 4) as usize;
+                    if src_idx + 3 < part_data.len() {
+                        full_image.put_pixel(
+                            offset_x + x,
+                            offset_y + y,
+                            Rgba([
+                                part_data[src_idx],
+                                part_data[src_idx + 1],
+                                part_data[src_idx + 2],
+                                255
+                            ])
+                        );
+                    }
+                }
+            }
         }
     }
+    
+    // 复制到剪贴板
+    let mut clipboard = Clipboard::new()?;
+    let image_data = full_image.clone().into_raw();
+    clipboard.set_image(arboard::ImageData {
+        width: width as usize,
+        height: height as usize,
+        bytes: image_data.clone().into(),
+    })?;
+    
+    // 创建预览窗口
+    let preview = PreviewWindowState::new(image_data, width, height);
+    preview.borrow().window.window().set_position(slint::LogicalPosition::new(
+        x as f32,
+        y as f32
+    ));
+    preview.borrow().show();
 
     Ok(())
 }

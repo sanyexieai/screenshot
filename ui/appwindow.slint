@@ -19,6 +19,7 @@ export component AppWindow inherits Window {
     
     in-out property <bool> is_selecting: false;
     in-out property <bool> show_mask: false;
+    in-out property <bool> show-decorations: true;
     property <float> start-x: 0;
     property <float> start-y: 0;
     property <float> current-x: 0;
@@ -79,7 +80,7 @@ export component AppWindow inherits Window {
             width: abs(root.current-x - root.start-x) * 1px;
             height: abs(root.current-y - root.start-y) * 1px;
             border-width: 1px;
-            border-color: green;
+            border-color: show-decorations?green:transparent;
             background: transparent;
             visible: root.is-selecting;
         } 
