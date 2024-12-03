@@ -15,7 +15,7 @@ export component PreviewWindow inherits Window {
     width: screenshot.width * 1px;
     height: screenshot.height * 1px;
     no-frame: true;
-    always-on-top: true;
+    always-on-top: !root.show-decorations;
     background: transparent;
     Rectangle {
         width: parent.width;
